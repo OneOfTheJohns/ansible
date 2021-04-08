@@ -1,0 +1,5 @@
+---
+#vars.yml
+Packages: apache2,php,php-mysql,php-mysqlnd,php-ldap,php-bcmath,php-mbstring,php-gd,php-pdo,php-xml,libapache2-mod-php,mariadb-server,mariadb-client,libmariadbclient-dev,python-pymysql,python3-pymysql,python-pip
+MysqlUserName: bob
+MysqlUserPassword: 12345

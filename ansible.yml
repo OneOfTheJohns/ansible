@@ -1,0 +1,145 @@
+---
+- hosts: localhost
+  tasks:
+
+  - name: Include vars of VARS.YML
+    include_vars: vars.yml
+
+  - name: install aptitude
+    apt:
+      name: aptitude
+      state: present
+      update_cache: yes
+
+  - name: Run apt upgrade ### second time run failing, try apt-get purge zabbix-agent
+    apt:
+      upgrade: "yes"
+      update_cache: yes
+      cache_valid_time: 432000
+
+  - name: Install a list of packages
+    apt:
+      name: "{{ Packages }}"
+      state: present
+
+  - name: Install the Python MySQLB module
+    pip: 
+      name: MySQL-python
+
+  - name: Make sure mysql service is running
+    service:
+      name: mysql
+      state: started
+      enabled: True
+
+  - name: Update APT Package repository cache
+    apt:
+      update_cache: True
+  
+  - name: Add key
+    apt_key:
+      url: https://repo.zabbix.com/zabbix-official-repo.key
+      state: present
+
+  - name: check for zabbix repo
+    stat:
+      path: /etc/apt/sources.list.d/zabbix-release_5.0-1+buster_all.deb.list
+    register: puppet4_repo
+
+  - name: Download zabbix
+    get_url: 
+      url="https://repo.zabbix.com/zabbix/4.0/debian/pool/main/z/zabbix-release/zabbix-release_4.0-3+stretch_all.deb"
+      dest="/root/zabbix/zabbix-release_4.0-3+stretch_all.deb"
+    when: not puppet4_repo.stat.exists
+
+  - name: Update APT Package repository cache
+    apt:
+      update_cache: True
+
+  - name: Install zabbix
+    apt: 
+      deb: zabbix-release_4.0-3+stretch_all.deb
+    when: not puppet4_repo.stat.exists 
+
+  - name: Update APT Package repository cache
+    apt:
+      update_cache: True
+
+  - name: Install zabbix dependecies
+    apt:
+      name: zabbix-server-mysql,zabbix-frontend-php,zabbix-agent
+      state: present
+
+  - name: Update APT Package repository cache
+    apt:
+      update_cache: True
+
+  - name: Create a new database
+    mysql_db:
+      name: zabbix
+      state: present
+
+  - mysql_user:
+      name: "{{MysqlUserName}}"
+      password: "{{MysqlUserPassword}}"
+      priv: '*.*:ALL'
+      state: present
+
+  - name: check for create.sql
+    stat:
+      path: /usr/share/doc/zabbix-server-mysql/create.sql
+    register: aboba
+
+  - name: default ansible "unarchive" doesnt work becaues it uses only gtar/unzip, that cant unarchive .gz files
+    command:
+      cmd: gunzip /usr/share/doc/zabbix-server-mysql/create.sql.gz
+    when: not aboba
+
+  - name: databases | check for db existence
+    shell: >
+      mysql -e "show tables FROM zabbix"
+    register: mysql_exist
+    with_items: mysql_databases
+    ignore_errors: True
+
+  - name: Insert/Update "Match User" configuration block in /etc/zabbix/zabbix_server.conf
+    blockinfile:
+      dest: /etc/zabbix/zabbix_server.conf
+      block: |
+        DBHost=localhost
+        DBName=zabbix
+        DBUser="{{MysqlUserName}}"
+        DBPassword="{{MysqlUserPassword}}"
+
+  # - name: add timezone
+  #   lineinfile:
+  #     path: /etc/apache2/conf-available/zabbix.conf
+  #     regexp: '# php_value date.timezone Europe/Riga'
+  #     line: php_value date.timezone Europe/Riga
+
+  - name: Restart service httpd, in all cases
+    service:
+      name: apache2
+      state: restarted
+  - block:
+    - name: Import file.sql similar to mysql -u <username> -p <password> < hostname.sql
+      mysql_db:
+        login_password: "{{MysqlUserPassword}}"
+        login_user: "{{MysqlUserName}}"
+        login_host: localhost
+        state: import
+        name: zabbix
+        target: /usr/share/doc/zabbix-server-mysql/create.sql
+      when: not mysql_exist
+    ignore_errors: yes
+
+  - name: Restart service httpd, in all cases
+    service:
+      name: zabbix-server
+      state: restarted
+  - name: Restart service httpd, in all cases
+    service:
+      name: zabbix-agent
+      state: restarted
+# INSTALL SELINUX TO RECEIVE ZABBIX-SERVER PID???? GIVE IT PERMISSIONS??? BLJAD KAKOGO HUJA
+# sudo aptitude install zabbix-server-mysql zabbix-frontend-php zabbix-agent
